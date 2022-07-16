@@ -56,7 +56,7 @@
  * with the PRECISE_COVERAGE define, where this is important to ensure correct rounding and tie-breaker
  * behaviour. It also affects the ScissorRect screen space coordinates.
  */
-#define USE_D3D                         1
+#define USE_D3D                         0
 
 #endif
 
@@ -65,7 +65,7 @@
  * Define PRECISE_COVERAGE to 1 to more closely match GPU rasterization rules. The increased precision comes
  * at a cost of slightly lower performance.
  */
-#define PRECISE_COVERAGE                1
+#define PRECISE_COVERAGE                0
 
 #endif
 
