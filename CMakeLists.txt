@@ -83,3 +83,4 @@ add_library( MaskedOcclusionCulling ${MOC_FILES} )
 # Add folder to include path
 #
 target_include_directories(MaskedOcclusionCulling PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_options(MaskedOcclusionCulling PRIVATE -mxsave -fPIC)
