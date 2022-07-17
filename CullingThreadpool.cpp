@@ -188,16 +188,18 @@ void CullingThreadpool::RenderJobQueue::Reset()
 {
 	mWritePtr = 0;
 	mBinningPtr = 0;
-
-	for (unsigned int i = 0; i < mNumBins; ++i)
-		mRenderPtrs[i] = 0;
-
+	
 	for (unsigned int i = 0; i < mMaxJobs; ++i)
 	{
 		mJobs[i].mBinningJobCompletedIdx = -1;
 		mJobs[i].mBinningJobStartedIdx = -1;
 	}
+	
+	for (unsigned int i = 0; i < mNumBins; ++i) {
+		mRenderPtrs[i] = 0;
+	}
 }
+	
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Culling threadpool private helper functions
@@ -320,8 +322,8 @@ CullingThreadpool::CullingThreadpool(unsigned int numThreads, unsigned int binsW
 	mKillThreads(false),
 	mSuspendThreads(true),
 	mNumSuspendedThreads(0),
-	mModelToClipMatrices(maxJobs),
-	mVertexLayouts(maxJobs),
+	mModelToClipMatrices(maxJobs + 1),
+	mVertexLayouts(maxJobs + 1),
 	mMOC(nullptr)
 {
 	mNumBins = mBinsW*mBinsH;
