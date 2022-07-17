@@ -111,7 +111,7 @@ inline void CullingThreadpool::RenderJobQueue::AdvanceRenderJob(int binIdx)
 inline unsigned int CullingThreadpool::RenderJobQueue::GetBestGlobalQueue() const
 {
 	// Find least advanced queue
-	unsigned int bestBin = ~0, bestPtr = mWritePtr;
+	unsigned int bestBin = ~0, bestPtr = mWritePtr.load(std::memory_order_acquire);
 	for (unsigned int i = 0; i < mNumBins; ++i)
 	{
 		if (mRenderPtrs[i] < bestPtr && mBinMutexes[i] == 0)
@@ -125,37 +125,37 @@ inline unsigned int CullingThreadpool::RenderJobQueue::GetBestGlobalQueue() cons
 
 inline bool CullingThreadpool::RenderJobQueue::IsPipelineEmpty() const
 {
-	return GetMinRenderPtr() == mWritePtr;
+	return GetMinRenderPtr() == mWritePtr.load(std::memory_order_acquire);
 }
 
 inline bool CullingThreadpool::RenderJobQueue::CanWrite() const
 {
-	return mWritePtr - GetMinRenderPtr() < mMaxJobs;
+	return mWritePtr.load(std::memory_order_acquire) - GetMinRenderPtr() < mMaxJobs;
 }
 
 inline bool CullingThreadpool::RenderJobQueue::CanBin() const
 {
-	return mBinningPtr < mWritePtr && mBinningPtr - GetMinRenderPtr() < mMaxJobs;
+	return mBinningPtr < mWritePtr.load(std::memory_order_acquire) && mBinningPtr - GetMinRenderPtr() < mMaxJobs;
 }
 
 inline CullingThreadpool::RenderJobQueue::Job *CullingThreadpool::RenderJobQueue::GetWriteJob()
 {
-	return &mJobs[mWritePtr % mMaxJobs];
+	return &mJobs[mWritePtr.load(std::memory_order_acquire) % mMaxJobs];
 }
 
 inline void CullingThreadpool::RenderJobQueue::AdvanceWriteJob()
 {
-	mWritePtr++;
+	mWritePtr.fetch_add(1, std::memory_order_release);
 }
 
 inline CullingThreadpool::RenderJobQueue::Job *CullingThreadpool::RenderJobQueue::GetBinningJob()
 {
 	unsigned int binningPtr = mBinningPtr;
-	if (binningPtr < mWritePtr && binningPtr - GetMinRenderPtr() < mMaxJobs)
+	if (binningPtr < mWritePtr.load(std::memory_order_acquire) && binningPtr - GetMinRenderPtr() < mMaxJobs)
 	{
 		if (mBinningPtr.compare_exchange_strong(binningPtr, binningPtr + 1))
 		{
-			mJobs[binningPtr % mMaxJobs].mBinningJobStartedIdx = binningPtr;
+			mJobs[binningPtr % mMaxJobs].mBinningJobStartedIdx.store(binningPtr, std::memory_order_release);
 			return &mJobs[binningPtr % mMaxJobs];
 		}
 	}
@@ -164,7 +164,7 @@ inline CullingThreadpool::RenderJobQueue::Job *CullingThreadpool::RenderJobQueue
 
 inline void CullingThreadpool::RenderJobQueue::FinishedBinningJob(Job *job)
 {
-	job->mBinningJobCompletedIdx = job->mBinningJobStartedIdx;
+	job->mBinningJobCompletedIdx.store(job->mBinningJobStartedIdx.load(std::memory_order_acquire), std::memory_order_release);
 }
 
 inline CullingThreadpool::RenderJobQueue::Job *CullingThreadpool::RenderJobQueue::GetRenderJob(int binIdx)
@@ -175,7 +175,7 @@ inline CullingThreadpool::RenderJobQueue::Job *CullingThreadpool::RenderJobQueue
 		return nullptr;
 
 	// Check any items in the queue, and bail if empty
-	if (mRenderPtrs[binIdx] != mJobs[mRenderPtrs[binIdx] % mMaxJobs].mBinningJobCompletedIdx)
+	if (mRenderPtrs[binIdx] != mJobs[mRenderPtrs[binIdx] % mMaxJobs].mBinningJobCompletedIdx.load(std::memory_order_acquire))
 	{
 		mBinMutexes[binIdx] = 0;
 		return nullptr;
@@ -186,18 +186,19 @@ inline CullingThreadpool::RenderJobQueue::Job *CullingThreadpool::RenderJobQueue
 
 void CullingThreadpool::RenderJobQueue::Reset()
 {
-	mWritePtr = 0;
+	mWritePtr.store(0, std::memory_order_acquire);
 	mBinningPtr = 0;
-	
-	for (unsigned int i = 0; i < mMaxJobs; ++i)
-	{
-		mJobs[i].mBinningJobCompletedIdx = -1;
-		mJobs[i].mBinningJobStartedIdx = -1;
-	}
 	
 	for (unsigned int i = 0; i < mNumBins; ++i) {
 		mRenderPtrs[i] = 0;
 	}
+
+	for (unsigned int i = 0; i < mMaxJobs; ++i)
+	{
+		mJobs[i].mBinningJobCompletedIdx.store(-1, std::memory_order_release);
+		mJobs[i].mBinningJobStartedIdx.store(-1, std::memory_order_release);
+	}
+	
 }
 	
 
@@ -243,15 +244,15 @@ void CullingThreadpool::ThreadMain(unsigned int threadIdx)
 
 		// Wait for threads to be woken up (low CPU load sleep)
 		std::unique_lock<std::mutex> lock(mSuspendedMutex);
-		mNumSuspendedThreads++;
-		mSuspendedCV.wait(lock, [&] {return !mSuspendThreads; });
-		mNumSuspendedThreads--;
+		mNumSuspendedThreads.fetch_add(1, std::memory_order_release);
+		mSuspendedCV.wait(lock, [&] {return !mSuspendThreads.load(std::memory_order_release); });
+		mNumSuspendedThreads.fetch_sub(1, std::memory_order_release);
 		lock.unlock();
 
 		// Loop until suspended again
-		while (!mSuspendThreads || !threadIsIdle)
+		while (!mSuspendThreads.load(std::memory_order_release) || !threadIsIdle)
 		{
-			if (mKillThreads)
+			if (mKillThreads.load(std::memory_order_acquire))
 				return;
 
 			threadIsIdle = false;
@@ -345,10 +346,10 @@ CullingThreadpool::CullingThreadpool(unsigned int numThreads, unsigned int binsW
 CullingThreadpool::~CullingThreadpool()
 {
 	// Wait for threads to terminate
-	if (mThreads != nullptr || !mKillThreads)
+	if (mThreads != nullptr || !mKillThreads.load(std::memory_order_acquire))
 	{
 		WakeThreads();
-		mKillThreads = true;
+		mKillThreads.store(true, std::memory_order_release);
 		for (unsigned int i = 0; i < mNumThreads; ++i)
 			mThreads[i].join();
 
@@ -363,12 +364,12 @@ CullingThreadpool::~CullingThreadpool()
 void CullingThreadpool::WakeThreads()
 {
 	// Wait for all threads to be in suspended mode
-	while (mNumSuspendedThreads < mNumThreads)
+	while (mNumSuspendedThreads.load(std::memory_order_acquire) < mNumThreads)
 		std::this_thread::yield();
 
 	// Send wake up event
 	std::unique_lock<std::mutex> lock(mSuspendedMutex);
-	mSuspendThreads = false;
+	mSuspendThreads.store(false, std::memory_order_release);
 	lock.unlock();
 	mSuspendedCV.notify_all();
 }
@@ -376,7 +377,7 @@ void CullingThreadpool::WakeThreads()
 void CullingThreadpool::SuspendThreads()
 {
 	// Signal threads to go into suspended mode (after finishing all outstanding work)
-	mSuspendThreads = true;
+	mSuspendThreads.store(true, std::memory_order_release);
 }
 
 void CullingThreadpool::Flush()
