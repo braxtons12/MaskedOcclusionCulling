@@ -80,8 +80,8 @@ protected:
 
 		struct Job
 		{
-			volatile unsigned int mBinningJobStartedIdx;
-			volatile unsigned int mBinningJobCompletedIdx;
+			std::atomic_uint mBinningJobStartedIdx;
+			std::atomic_uint mBinningJobCompletedIdx;
 			BinningJob            mBinningJob;
 			TriList               *mRenderJobs;
 		};
@@ -89,7 +89,7 @@ protected:
 		unsigned int          mNumBins;
 		unsigned int          mMaxJobs;
 
-		volatile unsigned int mWritePtr;
+		std::atomic_uint mWritePtr;
 		std::atomic_uint      mBinningPtr;
 		std::atomic_uint      *mRenderPtrs;
 		std::atomic_uint      *mBinMutexes;
@@ -142,9 +142,9 @@ protected:
 	// Threads and control variables
 	std::mutex              mSuspendedMutex;
 	std::condition_variable mSuspendedCV;
-	volatile bool           mKillThreads;
-	volatile bool           mSuspendThreads;
-	volatile unsigned int   mNumSuspendedThreads;
+	std::atomic_bool           mKillThreads;
+	std::atomic_bool           mSuspendThreads;
+	std::atomic_uint   mNumSuspendedThreads;
 	std::thread             *mThreads;
 
 	// State variables and command queue
