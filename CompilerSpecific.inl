@@ -77,21 +77,21 @@
 		free(ptr);
 	}
 
-	FORCE_INLINE void __cpuidex(int* cpuinfo, int function, int subfunction)
-	{
-		__cpuid_count(function, subfunction, cpuinfo[0], cpuinfo[1], cpuinfo[2], cpuinfo[3]);
-	}
+	//FORCE_INLINE void __cpuidex(int* cpuinfo, int function, int subfunction)
+	//{
+	//	__cpuid_count(function, subfunction, cpuinfo[0], cpuinfo[1], cpuinfo[2], cpuinfo[3]);
+	//}
 
-	FORCE_INLINE unsigned long long _xgetbv(unsigned int index)
-	{
-		unsigned int eax, edx;
-		__asm__ __volatile__(
-			"xgetbv;"
-			: "=a" (eax), "=d"(edx)
-			: "c" (index)
-		);
-		return ((unsigned long long)edx << 32) | eax;
-	}
+	//FORCE_INLINE unsigned long long _xgetbv(unsigned int index)
+	//{
+	//	unsigned int eax, edx;
+	//	__asm__ __volatile__(
+	//		"xgetbv;"
+	//		: "=a" (eax), "=d"(edx)
+	//		: "c" (index)
+	//	);
+	//	return ((unsigned long long)edx << 32) | eax;
+	//}
 
 #else
 	#error Unsupported compiler
